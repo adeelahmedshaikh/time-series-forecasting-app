@@ -94,6 +94,16 @@ if uploaded_file is not None:
     st.subheader(f"{horizon}-Day Forecast")
     st.write(forecast_df)
 
+    csv = forecast_df.to_csv(index=False).encode('utf-8')
+
+    st.download_button(
+        label="Download Forecast CSV",
+        data=csv,
+        file_name="forecast.csv",
+        mime="text/csv",
+    )
+
+
     st.subheader("Forecast Visualization")
 
     fig, ax = plt.subplots()
