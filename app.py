@@ -3,6 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 from model_selector import evaluate_models, forecast_next_days
+from data_utils import detect_date_column, detect_target_column, standardize_columns
 
 st.title("Auto Time-Series Forecasting App")
 
@@ -14,12 +15,30 @@ if uploaded_file is not None:
     st.subheader("Uploaded Data")
     st.write(df.head())
 
-    if "date" not in df.columns or "value" not in df.columns:
-        st.error("CSV must contain columns named 'date' and 'value'.")
+    detected_date = detect_date_column(df)
+    detected_target = detect_target_column(df)
+
+    st.subheader("Column Selection")
+
+    date_col = st.selectbox(
+        "Select date column",
+        df.columns.tolist(),
+        index=df.columns.tolist().index(detected_date) if detected_date in df.columns else 0
+    )
+
+    numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
+
+    if not numeric_cols:
+        st.error("No numeric column found for forecasting.")
         st.stop()
 
-    df["date"] = pd.to_datetime(df["date"])
-    df = df.sort_values("date")
+    target_col = st.selectbox(
+        "Select target column",
+        numeric_cols,
+        index=numeric_cols.index(detected_target) if detected_target in numeric_cols else 0
+    )
+
+    df = standardize_columns(df, date_col, target_col)
 
     st.subheader("Dataset Information")
     st.write(f"Number of rows: {len(df)}")
