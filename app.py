@@ -30,6 +30,17 @@ st.write(comparison_df)
 best_model = min(metrics, key=lambda x: metrics[x]["MAE"])
 st.info(f"Best model based on MAE: {best_model}")
 
+rf_mae = metrics["Random Forest"]["MAE"]
+xgb_mae = metrics["XGBoost"]["MAE"]
+
+if rf_mae < xgb_mae:
+    st.write("Random Forest performs better because it handles small datasets and noise more robustly.")
+else:
+    st.write("XGBoost performs better due to its boosting mechanism capturing complex patterns.")
+
+diff = abs(rf_mae - xgb_mae)
+st.write(f"Difference in MAE between models: {diff:.2f}")
+
 if uploaded_file is not None:
     df = pd.read_csv(uploaded_file)
 
