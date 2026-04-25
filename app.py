@@ -31,38 +31,65 @@ if uploaded_file is not None:
     df["date"] = pd.to_datetime(df["date"])
     df = df.sort_values("date")
 
-    df["lag_1"] = df["value"].shift(1)
-    df["lag_2"] = df["value"].shift(2)
-    df["lag_3"] = df["value"].shift(3)
-    df["rolling_mean_3"] = df["value"].rolling(3).mean()
-    df["rolling_std_3"] = df["value"].rolling(3).std()
+    if len(df) >= 5:
+        horizon = 7
+        predictions = []
+        temp_df = df.copy()
 
-    df_model = df.dropna()
+        for _ in range(horizon):
+            temp_df["lag_1"] = temp_df["value"].shift(1)
+            temp_df["lag_2"] = temp_df["value"].shift(2)
+            temp_df["lag_3"] = temp_df["value"].shift(3)
+            temp_df["rolling_mean_3"] = temp_df["value"].rolling(3).mean()
+            temp_df["rolling_std_3"] = temp_df["value"].rolling(3).std()
 
-    if len(df_model) > 0:
-        latest_features = df_model[features].iloc[[-1]]
-        prediction = model.predict(latest_features)[0]
+            temp_model_df = temp_df.dropna()
 
-        st.subheader("Next Forecast")
-        st.success(f"{model_choice} predicted next value: {prediction:.2f}")
+            latest_features = temp_model_df[features].iloc[[-1]]
+            next_pred = model.predict(latest_features)[0]
 
-        last_date = df["date"].iloc[-1]
-        next_date = last_date + pd.Timedelta(days=1)
+            predictions.append(float(next_pred))
+
+            next_date = temp_df["date"].iloc[-1] + pd.Timedelta(days=1)
+
+            new_row = pd.DataFrame({
+                "date": [next_date],
+                "value": [next_pred]
+            })
+
+            temp_df = pd.concat([temp_df, new_row], ignore_index=True)
+
+        forecast_dates = pd.date_range(
+            start=df["date"].iloc[-1] + pd.Timedelta(days=1),
+            periods=horizon
+        )
 
         forecast_df = pd.DataFrame({
-            "date": [next_date],
-            "value": [prediction]
+            "date": forecast_dates,
+            "forecast": predictions
         })
+
+        st.subheader("7-Day Forecast")
+        st.write(forecast_df)
+
+        st.success(
+            f"{model_choice} predicted next 7 values successfully."
+        )
 
         st.subheader("Forecast Visualization")
 
         fig, ax = plt.subplots()
         ax.plot(df["date"], df["value"], label="Actual")
-        ax.scatter(forecast_df["date"], forecast_df["value"], label="Forecast")
+        ax.plot(
+            forecast_df["date"],
+            forecast_df["forecast"],
+            marker="o",
+            label="7-Day Forecast"
+        )
         ax.set_xlabel("Date")
         ax.set_ylabel("Value")
         ax.legend()
         st.pyplot(fig)
 
     else:
-        st.warning("Not enough data after feature creation.")
+        st.warning("Please upload at least 5 rows of data.")
