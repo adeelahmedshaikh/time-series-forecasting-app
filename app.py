@@ -7,7 +7,20 @@ st.title("Time-Series Forecasting App")
 
 uploaded_file = st.file_uploader("Upload CSV file", type=["csv"])
 
-model = joblib.load("models/forecast_model.pkl")
+rf_model = joblib.load("models/random_forest_model.pkl")
+xgb_model = joblib.load("models/xgboost_model.pkl")
+features = joblib.load("models/features.pkl")
+metrics = joblib.load("models/metrics.pkl")
+
+model_choice = st.selectbox(
+    "Choose forecasting model",
+    ["Random Forest", "XGBoost"]
+)
+
+model = rf_model if model_choice == "Random Forest" else xgb_model
+
+st.subheader("Model Performance")
+st.write(metrics[model_choice])
 
 if uploaded_file is not None:
     df = pd.read_csv(uploaded_file)
@@ -18,27 +31,38 @@ if uploaded_file is not None:
     df["date"] = pd.to_datetime(df["date"])
     df = df.sort_values("date")
 
-    st.subheader("Original Time Series")
-    fig, ax = plt.subplots()
-    ax.plot(df["date"], df["value"])
-    ax.set_xlabel("Date")
-    ax.set_ylabel("Value")
-    st.pyplot(fig)
+    df["lag_1"] = df["value"].shift(1)
+    df["lag_2"] = df["value"].shift(2)
+    df["lag_3"] = df["value"].shift(3)
+    df["rolling_mean_3"] = df["value"].rolling(3).mean()
+    df["rolling_std_3"] = df["value"].rolling(3).std()
 
-    values = df["value"].tolist()
+    df_model = df.dropna()
 
-    if len(values) >= 3:
-        lag_1 = values[-1]
-        lag_2 = values[-2]
-        lag_3 = values[-3]
-
-        prediction = model.predict(pd.DataFrame([{
-            "lag_1": lag_1,
-            "lag_2": lag_2,
-            "lag_3": lag_3
-        }]))[0]
+    if len(df_model) > 0:
+        latest_features = df_model[features].iloc[[-1]]
+        prediction = model.predict(latest_features)[0]
 
         st.subheader("Next Forecast")
-        st.success(f"Predicted next value: {prediction:.2f}")
+        st.success(f"{model_choice} predicted next value: {prediction:.2f}")
+
+        last_date = df["date"].iloc[-1]
+        next_date = last_date + pd.Timedelta(days=1)
+
+        forecast_df = pd.DataFrame({
+            "date": [next_date],
+            "value": [prediction]
+        })
+
+        st.subheader("Forecast Visualization")
+
+        fig, ax = plt.subplots()
+        ax.plot(df["date"], df["value"], label="Actual")
+        ax.scatter(forecast_df["date"], forecast_df["value"], label="Forecast")
+        ax.set_xlabel("Date")
+        ax.set_ylabel("Value")
+        ax.legend()
+        st.pyplot(fig)
+
     else:
-        st.warning("Please upload at least 3 rows of data.")
+        st.warning("Not enough data after feature creation.")
