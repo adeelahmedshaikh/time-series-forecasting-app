@@ -22,6 +22,14 @@ model = rf_model if model_choice == "Random Forest" else xgb_model
 st.subheader("Model Performance")
 st.write(metrics[model_choice])
 
+st.subheader("Model Comparison")
+
+comparison_df = pd.DataFrame(metrics).T
+st.write(comparison_df)
+
+best_model = min(metrics, key=lambda x: metrics[x]["MAE"])
+st.info(f"Best model based on MAE: {best_model}")
+
 if uploaded_file is not None:
     df = pd.read_csv(uploaded_file)
 
