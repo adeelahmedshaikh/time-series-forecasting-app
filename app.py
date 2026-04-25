@@ -1,45 +1,12 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
-import joblib
 
-st.title("Time-Series Forecasting App")
+from model_selector import evaluate_models, forecast_next_days
+
+st.title("Auto Time-Series Forecasting App")
 
 uploaded_file = st.file_uploader("Upload CSV file", type=["csv"])
-
-rf_model = joblib.load("models/random_forest_model.pkl")
-xgb_model = joblib.load("models/xgboost_model.pkl")
-features = joblib.load("models/features.pkl")
-metrics = joblib.load("models/metrics.pkl")
-
-model_choice = st.selectbox(
-    "Choose forecasting model",
-    ["Random Forest", "XGBoost"]
-)
-
-model = rf_model if model_choice == "Random Forest" else xgb_model
-
-st.subheader("Model Performance")
-st.write(metrics[model_choice])
-
-st.subheader("Model Comparison")
-
-comparison_df = pd.DataFrame(metrics).T
-st.write(comparison_df)
-
-best_model = min(metrics, key=lambda x: metrics[x]["MAE"])
-st.info(f"Best model based on MAE: {best_model}")
-
-rf_mae = metrics["Random Forest"]["MAE"]
-xgb_mae = metrics["XGBoost"]["MAE"]
-
-if rf_mae < xgb_mae:
-    st.write("Random Forest performs better because it handles small datasets and noise more robustly.")
-else:
-    st.write("XGBoost performs better due to its boosting mechanism capturing complex patterns.")
-
-diff = abs(rf_mae - xgb_mae)
-st.write(f"Difference in MAE between models: {diff:.2f}")
 
 if uploaded_file is not None:
     df = pd.read_csv(uploaded_file)
@@ -47,68 +14,91 @@ if uploaded_file is not None:
     st.subheader("Uploaded Data")
     st.write(df.head())
 
+    if "date" not in df.columns or "value" not in df.columns:
+        st.error("CSV must contain columns named 'date' and 'value'.")
+        st.stop()
+
     df["date"] = pd.to_datetime(df["date"])
     df = df.sort_values("date")
 
-    if len(df) >= 5:
-        horizon = 7
-        predictions = []
-        temp_df = df.copy()
+    st.subheader("Dataset Information")
+    st.write(f"Number of rows: {len(df)}")
 
-        for _ in range(horizon):
-            temp_df["lag_1"] = temp_df["value"].shift(1)
-            temp_df["lag_2"] = temp_df["value"].shift(2)
-            temp_df["lag_3"] = temp_df["value"].shift(3)
-            temp_df["rolling_mean_3"] = temp_df["value"].rolling(3).mean()
-            temp_df["rolling_std_3"] = temp_df["value"].rolling(3).std()
+    if len(df) < 10:
+        st.warning("Dataset is too small. Please upload at least 10 rows.")
+        st.stop()
 
-            temp_model_df = temp_df.dropna()
+    results, trained_models, best_model, features = evaluate_models(df)
 
-            latest_features = temp_model_df[features].iloc[[-1]]
-            next_pred = model.predict(latest_features)[0]
+    st.subheader("Model Comparison")
+    comparison_df = pd.DataFrame(results).T
+    st.write(comparison_df)
 
-            predictions.append(float(next_pred))
+    st.info(f"Best model based on MAE: {best_model}")
 
-            next_date = temp_df["date"].iloc[-1] + pd.Timedelta(days=1)
+    st.subheader("Model Selection")
 
-            new_row = pd.DataFrame({
-                "date": [next_date],
-                "value": [next_pred]
-            })
+    mode = st.radio(
+        "Choose forecasting mode",
+        ["Automatic Best Model", "Manual Model Selection"]
+    )
 
-            temp_df = pd.concat([temp_df, new_row], ignore_index=True)
-
-        forecast_dates = pd.date_range(
-            start=df["date"].iloc[-1] + pd.Timedelta(days=1),
-            periods=horizon
-        )
-
-        forecast_df = pd.DataFrame({
-            "date": forecast_dates,
-            "forecast": predictions
-        })
-
-        st.subheader("7-Day Forecast")
-        st.write(forecast_df)
-
-        st.success(
-            f"{model_choice} predicted next 7 values successfully."
-        )
-
-        st.subheader("Forecast Visualization")
-
-        fig, ax = plt.subplots()
-        ax.plot(df["date"], df["value"], label="Actual")
-        ax.plot(
-            forecast_df["date"],
-            forecast_df["forecast"],
-            marker="o",
-            label="7-Day Forecast"
-        )
-        ax.set_xlabel("Date")
-        ax.set_ylabel("Value")
-        ax.legend()
-        st.pyplot(fig)
-
+    if mode == "Automatic Best Model":
+        selected_model = best_model
     else:
-        st.warning("Please upload at least 5 rows of data.")
+        selected_model = st.selectbox(
+            "Choose model",
+            list(results.keys())
+        )
+
+    st.write(f"Selected model: **{selected_model}**")
+
+    horizon = st.selectbox(
+        "Forecast horizon",
+        [7, 14, 30]
+    )
+
+    forecast_df = forecast_next_days(
+        df=df,
+        model_name=selected_model,
+        trained_models=trained_models,
+        features=features,
+        horizon=horizon
+    )
+
+    st.subheader(f"{horizon}-Day Forecast")
+    st.write(forecast_df)
+
+    st.subheader("Forecast Visualization")
+
+    fig, ax = plt.subplots()
+    ax.plot(df["date"], df["value"], label="Actual")
+    ax.plot(
+        forecast_df["date"],
+        forecast_df["forecast"],
+        marker="o",
+        label="Forecast"
+    )
+    ax.set_xlabel("Date")
+    ax.set_ylabel("Value")
+    ax.legend()
+    st.pyplot(fig)
+
+    st.subheader("Insight")
+
+    first_forecast = forecast_df["forecast"].iloc[0]
+    last_forecast = forecast_df["forecast"].iloc[-1]
+
+    if last_forecast > first_forecast:
+        st.success("Trend: Forecast is increasing. Demand or value may rise.")
+    elif last_forecast < first_forecast:
+        st.warning("Trend: Forecast is decreasing. Demand or value may drop.")
+    else:
+        st.info("Trend: Forecast is mostly stable.")
+
+    volatility = forecast_df["forecast"].std()
+
+    if volatility > df["value"].std() * 0.5:
+        st.warning("Risk: Forecast shows high volatility. Be careful with large decisions.")
+    else:
+        st.success("Risk: Forecast is relatively stable.")
