@@ -46,17 +46,11 @@ if uploaded_file is not None:
     if mode == "Automatic Best Model":
         selected_model = best_model
     else:
-        selected_model = st.selectbox(
-            "Choose model",
-            list(results.keys())
-        )
+        selected_model = st.selectbox("Choose model", list(results.keys()))
 
     st.write(f"Selected model: **{selected_model}**")
 
-    horizon = st.selectbox(
-        "Forecast horizon",
-        [7, 14, 30]
-    )
+    horizon = st.selectbox("Forecast horizon", [7, 14, 30])
 
     forecast_df = forecast_next_days(
         df=df,
@@ -89,12 +83,14 @@ if uploaded_file is not None:
     first_forecast = forecast_df["forecast"].iloc[0]
     last_forecast = forecast_df["forecast"].iloc[-1]
 
-    if last_forecast > first_forecast:
-        st.success("Trend: Forecast is increasing. Demand or value may rise.")
-    elif last_forecast < first_forecast:
-        st.warning("Trend: Forecast is decreasing. Demand or value may drop.")
+    forecast_change = ((last_forecast - first_forecast) / first_forecast) * 100
+
+    if forecast_change > 2:
+        st.success(f"Trend: Forecast is increasing by about {forecast_change:.2f}%.")
+    elif forecast_change < -2:
+        st.warning(f"Trend: Forecast is decreasing by about {abs(forecast_change):.2f}%.")
     else:
-        st.info("Trend: Forecast is mostly stable.")
+        st.info(f"Trend: Forecast is mostly stable ({forecast_change:.2f}% change).")
 
     volatility = forecast_df["forecast"].std()
 
@@ -102,3 +98,21 @@ if uploaded_file is not None:
         st.warning("Risk: Forecast shows high volatility. Be careful with large decisions.")
     else:
         st.success("Risk: Forecast is relatively stable.")
+
+    st.subheader("Recommendations")
+
+    if forecast_change > 2:
+        st.success("Recommendation: Demand is expected to rise. Consider increasing inventory or preparation.")
+    elif forecast_change < -2:
+        st.warning("Recommendation: Demand is expected to decline. Avoid overstocking.")
+    else:
+        st.info("Recommendation: Demand looks stable. Maintain current strategy.")
+
+    st.subheader("Alerts")
+
+    if forecast_change > 10:
+        st.error("Alert: Strong upward movement expected.")
+    elif forecast_change < -10:
+        st.error("Alert: Strong downward movement expected.")
+    else:
+        st.success("No major alert detected.")
