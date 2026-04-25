@@ -3,6 +3,7 @@ import numpy as np
 from sklearn.ensemble import RandomForestRegressor
 from xgboost import XGBRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error
+from statsmodels.tsa.arima.model import ARIMA
 
 
 def prepare_features(df):
@@ -52,6 +53,29 @@ def evaluate_models(df):
         "MSE": mean_squared_error(y_test, ma_pred)
     }
 
+        # ARIMA statistical model
+    try:
+        arima_train = train["value"]
+        arima_test = test["value"]
+
+        arima_model = ARIMA(arima_train, order=(5, 1, 0))
+        arima_fit = arima_model.fit()
+
+        arima_pred = arima_fit.forecast(steps=len(arima_test))
+
+        results["ARIMA"] = {
+            "MAE": mean_absolute_error(arima_test, arima_pred),
+            "MSE": mean_squared_error(arima_test, arima_pred)
+        }
+
+        trained_models["ARIMA"] = arima_fit
+
+    except Exception as e:
+        results["ARIMA skipped"] = {
+            "MAE": float("inf"),
+            "MSE": float("inf")
+        }
+
     # Random Forest
     rf = RandomForestRegressor(n_estimators=200, random_state=42)
     rf.fit(X_train, y_train)
@@ -100,6 +124,11 @@ def forecast_next_days(df, model_name, trained_models, features, horizon=7):
 
         elif model_name == "Moving Average":
             next_pred = latest_row["rolling_mean_3"]
+
+
+        elif model_name == "ARIMA":
+            model = trained_models["ARIMA"]
+            next_pred = model.forecast(steps=1).iloc[0]
 
         else:
             model = trained_models[model_name]
