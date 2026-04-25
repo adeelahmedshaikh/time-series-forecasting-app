@@ -38,6 +38,18 @@ if uploaded_file is not None:
         index=numeric_cols.index(detected_target) if detected_target in numeric_cols else 0
     )
 
+    target_type = st.selectbox(
+        "What are you forecasting?",
+        [
+            "Sales / Demand",
+            "Revenue",
+            "Stock / Asset Price",
+            "Energy / Usage",
+            "Temperature / Weather",
+            "Other Numeric Value"
+        ]
+    )
+
     df = standardize_columns(df, date_col, target_col)
 
     st.subheader("Dataset Information")
@@ -120,12 +132,54 @@ if uploaded_file is not None:
 
     st.subheader("Recommendations")
 
-    if forecast_change > 2:
-        st.success("Recommendation: Demand is expected to rise. Consider increasing inventory or preparation.")
-    elif forecast_change < -2:
-        st.warning("Recommendation: Demand is expected to decline. Avoid overstocking.")
+    if target_type == "Sales / Demand":
+        if forecast_change > 2:
+            st.success("Recommendation: Demand is expected to rise. Consider increasing inventory or preparation.")
+        elif forecast_change < -2:
+            st.warning("Recommendation: Demand is expected to decline. Avoid overstocking.")
+        else:
+            st.info("Recommendation: Demand looks stable. Maintain current strategy.")
+
+    elif target_type == "Revenue":
+        if forecast_change > 2:
+            st.success("Recommendation: Revenue is expected to increase. Consider reinforcing successful channels.")
+        elif forecast_change < -2:
+            st.warning("Recommendation: Revenue may decline. Review pricing, marketing, or demand drivers.")
+        else:
+            st.info("Recommendation: Revenue looks stable.")
+
+    elif target_type == "Stock / Asset Price":
+        if forecast_change > 2:
+            st.info("Observation: Upward movement is forecasted. This is not financial advice.")
+        elif forecast_change < -2:
+            st.info("Observation: Downward movement is forecasted. This is not financial advice.")
+        else:
+            st.info("Observation: Price appears relatively stable. This is not financial advice.")
+
+    elif target_type == "Energy / Usage":
+        if forecast_change > 2:
+            st.success("Recommendation: Usage is expected to rise. Prepare additional capacity or resources.")
+        elif forecast_change < -2:
+            st.warning("Recommendation: Usage is expected to fall. Avoid over-allocation of resources.")
+        else:
+            st.info("Recommendation: Usage looks stable.")
+
+    elif target_type == "Temperature / Weather":
+        if forecast_change > 2:
+            st.info("Observation: Temperature/weather-related value is expected to increase.")
+        elif forecast_change < -2:
+            st.info("Observation: Temperature/weather-related value is expected to decrease.")
+        else:
+            st.info("Observation: Forecast looks stable.")
+
     else:
-        st.info("Recommendation: Demand looks stable. Maintain current strategy.")
+        if forecast_change > 2:
+            st.info("Observation: The target value is expected to increase.")
+        elif forecast_change < -2:
+            st.info("Observation: The target value is expected to decrease.")
+        else:
+            st.info("Observation: The target value looks stable.")
+
 
     st.subheader("Alerts")
 
