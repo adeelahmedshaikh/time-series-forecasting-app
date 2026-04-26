@@ -5,197 +5,230 @@ import matplotlib.pyplot as plt
 from model_selector import evaluate_models, forecast_next_days
 from data_utils import detect_date_column, detect_target_column, standardize_columns
 
-st.title("Auto Time-Series Forecasting App")
 
-uploaded_file = st.file_uploader("Upload CSV file", type=["csv"])
+st.set_page_config(
+    page_title="Auto Time-Series Forecasting App",
+    page_icon="📈",
+    layout="wide"
+)
 
-if uploaded_file is not None:
-    df = pd.read_csv(uploaded_file)
+st.title("📈 Auto Time-Series Forecasting App")
 
-    st.subheader("Uploaded Data")
-    st.write(df.head())
+st.write(
+    "Upload a time-series CSV file, automatically compare forecasting models, "
+    "select the best model, and generate forecasts with insights, alerts, and recommendations."
+)
 
-    detected_date = detect_date_column(df)
-    detected_target = detect_target_column(df)
+st.sidebar.header("Settings")
 
-    st.subheader("Column Selection")
+uploaded_file = st.sidebar.file_uploader("Upload CSV file", type=["csv"])
 
-    date_col = st.selectbox(
-        "Select date column",
-        df.columns.tolist(),
-        index=df.columns.tolist().index(detected_date) if detected_date in df.columns else 0
-    )
+if uploaded_file is None:
+    st.info("Upload a CSV file to start forecasting.")
+    st.stop()
 
-    numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
+df_raw = pd.read_csv(uploaded_file)
 
-    if not numeric_cols:
-        st.error("No numeric column found for forecasting.")
-        st.stop()
+st.subheader("Dataset Preview")
+st.dataframe(df_raw.head())
 
-    target_col = st.selectbox(
-        "Select target column",
-        numeric_cols,
-        index=numeric_cols.index(detected_target) if detected_target in numeric_cols else 0
-    )
+detected_date = detect_date_column(df_raw)
+detected_target = detect_target_column(df_raw)
 
-    target_type = st.selectbox(
-        "What are you forecasting?",
-        [
-            "Sales / Demand",
-            "Revenue",
-            "Stock / Asset Price",
-            "Energy / Usage",
-            "Temperature / Weather",
-            "Other Numeric Value"
-        ]
-    )
+st.sidebar.subheader("Column Mapping")
 
-    df = standardize_columns(df, date_col, target_col)
+date_col = st.sidebar.selectbox(
+    "Select date column",
+    df_raw.columns.tolist(),
+    index=df_raw.columns.tolist().index(detected_date) if detected_date in df_raw.columns else 0
+)
 
-    st.subheader("Dataset Information")
-    st.write(f"Number of rows: {len(df)}")
+numeric_cols = df_raw.select_dtypes(include=["number"]).columns.tolist()
 
-    if len(df) < 10:
-        st.warning("Dataset is too small. Please upload at least 10 rows.")
-        st.stop()
+if not numeric_cols:
+    st.error("No numeric column found for forecasting.")
+    st.stop()
 
-    results, trained_models, best_model, features = evaluate_models(df)
+target_col = st.sidebar.selectbox(
+    "Select target column",
+    numeric_cols,
+    index=numeric_cols.index(detected_target) if detected_target in numeric_cols else 0
+)
 
-    st.subheader("Model Comparison")
-    comparison_df = pd.DataFrame(results).T
-    st.write(comparison_df)
+target_type = st.sidebar.selectbox(
+    "What are you forecasting?",
+    [
+        "Sales / Demand",
+        "Revenue",
+        "Stock / Asset Price",
+        "Energy / Usage",
+        "Temperature / Weather",
+        "Other Numeric Value"
+    ]
+)
 
-    st.info(f"Best model based on MAE: {best_model}")
+df = standardize_columns(df_raw, date_col, target_col)
 
-    st.subheader("Model Selection")
+if len(df) < 10:
+    st.warning("Dataset is too small. Please upload at least 10 valid rows.")
+    st.stop()
 
-    mode = st.radio(
-        "Choose forecasting mode",
-        ["Automatic Best Model", "Manual Model Selection"]
-    )
+results, trained_models, best_model, features = evaluate_models(df)
 
-    if mode == "Automatic Best Model":
-        selected_model = best_model
-    else:
-        selected_model = st.selectbox("Choose model", list(results.keys()))
+st.sidebar.subheader("Model Settings")
 
-    st.write(f"Selected model: **{selected_model}**")
+mode = st.sidebar.radio(
+    "Choose forecasting mode",
+    ["Automatic Best Model", "Manual Model Selection"]
+)
 
-    horizon = st.selectbox("Forecast horizon", [7, 14, 30])
+if mode == "Automatic Best Model":
+    selected_model = best_model
+else:
+    selected_model = st.sidebar.selectbox("Choose model", list(results.keys()))
 
-    forecast_df = forecast_next_days(
-        df=df,
-        model_name=selected_model,
-        trained_models=trained_models,
-        features=features,
-        horizon=horizon
-    )
+horizon = st.sidebar.selectbox("Forecast horizon", [7, 14, 30])
 
-    st.subheader(f"{horizon}-Day Forecast")
-    st.write(forecast_df)
+forecast_df = forecast_next_days(
+    df=df,
+    model_name=selected_model,
+    trained_models=trained_models,
+    features=features,
+    horizon=horizon
+)
 
-    csv = forecast_df.to_csv(index=False).encode('utf-8')
+first_forecast = forecast_df["forecast"].iloc[0]
+last_forecast = forecast_df["forecast"].iloc[-1]
+forecast_change = ((last_forecast - first_forecast) / first_forecast) * 100
+volatility = forecast_df["forecast"].std()
 
-    st.download_button(
-        label="Download Forecast CSV",
-        data=csv,
-        file_name="forecast.csv",
-        mime="text/csv",
-    )
+st.subheader("Overview")
 
+col1, col2, col3, col4 = st.columns(4)
 
-    st.subheader("Forecast Visualization")
+col1.metric("Rows", len(df))
+col2.metric("Best Model", best_model)
+col3.metric("Selected Model", selected_model)
+col4.metric("Forecast Horizon", f"{horizon} days")
 
-    fig, ax = plt.subplots()
-    ax.plot(df["date"], df["value"], label="Actual")
-    ax.plot(
-        forecast_df["date"],
-        forecast_df["forecast"],
-        marker="o",
-        label="Forecast"
-    )
-    ax.set_xlabel("Date")
-    ax.set_ylabel("Value")
-    ax.legend()
-    st.pyplot(fig)
+st.subheader("Model Leaderboard")
 
-    st.subheader("Insight")
+comparison_df = pd.DataFrame(results).T
+st.dataframe(
+    comparison_df.style.format({
+        "MAE": "{:.3f}",
+        "MSE": "{:.3f}"
+    })
+)
 
-    first_forecast = forecast_df["forecast"].iloc[0]
-    last_forecast = forecast_df["forecast"].iloc[-1]
+st.info(f"Best model based on MAE: **{best_model}**")
 
-    forecast_change = ((last_forecast - first_forecast) / first_forecast) * 100
+st.subheader("Forecast Results")
+st.dataframe(forecast_df)
 
+csv = forecast_df.to_csv(index=False).encode("utf-8")
+
+st.download_button(
+    label="Download Forecast CSV",
+    data=csv,
+    file_name="forecast.csv",
+    mime="text/csv",
+)
+
+st.subheader("Forecast Chart")
+
+fig, ax = plt.subplots(figsize=(10, 5))
+
+ax.plot(df["date"], df["value"], label="Actual")
+ax.plot(
+    forecast_df["date"],
+    forecast_df["forecast"],
+    marker="o",
+    label="Forecast"
+)
+
+ax.set_xlabel("Date")
+ax.set_ylabel(target_col)
+ax.legend()
+
+st.pyplot(fig)
+
+st.subheader("Executive Summary")
+
+st.info(
+    f"The selected model is **{selected_model}**. "
+    f"The forecast change over the next **{horizon} days** is **{forecast_change:.2f}%**."
+)
+
+st.subheader("Insights")
+
+if forecast_change > 2:
+    st.success(f"Trend: Forecast is increasing by about {forecast_change:.2f}%.")
+elif forecast_change < -2:
+    st.warning(f"Trend: Forecast is decreasing by about {abs(forecast_change):.2f}%.")
+else:
+    st.info(f"Trend: Forecast is mostly stable ({forecast_change:.2f}% change).")
+
+if volatility > df["value"].std() * 0.5:
+    st.warning("Risk: Forecast shows high volatility. Be careful with large decisions.")
+else:
+    st.success("Risk: Forecast is relatively stable.")
+
+st.subheader("Recommendations")
+
+if target_type == "Sales / Demand":
     if forecast_change > 2:
-        st.success(f"Trend: Forecast is increasing by about {forecast_change:.2f}%.")
+        st.success("Recommendation: Demand is expected to rise. Consider increasing inventory or preparation.")
     elif forecast_change < -2:
-        st.warning(f"Trend: Forecast is decreasing by about {abs(forecast_change):.2f}%.")
+        st.warning("Recommendation: Demand is expected to decline. Avoid overstocking.")
     else:
-        st.info(f"Trend: Forecast is mostly stable ({forecast_change:.2f}% change).")
+        st.info("Recommendation: Demand looks stable. Maintain current strategy.")
 
-    volatility = forecast_df["forecast"].std()
-
-    if volatility > df["value"].std() * 0.5:
-        st.warning("Risk: Forecast shows high volatility. Be careful with large decisions.")
+elif target_type == "Revenue":
+    if forecast_change > 2:
+        st.success("Recommendation: Revenue is expected to increase. Consider reinforcing successful channels.")
+    elif forecast_change < -2:
+        st.warning("Recommendation: Revenue may decline. Review pricing, marketing, or demand drivers.")
     else:
-        st.success("Risk: Forecast is relatively stable.")
+        st.info("Recommendation: Revenue looks stable.")
 
-    st.subheader("Recommendations")
-
-    if target_type == "Sales / Demand":
-        if forecast_change > 2:
-            st.success("Recommendation: Demand is expected to rise. Consider increasing inventory or preparation.")
-        elif forecast_change < -2:
-            st.warning("Recommendation: Demand is expected to decline. Avoid overstocking.")
-        else:
-            st.info("Recommendation: Demand looks stable. Maintain current strategy.")
-
-    elif target_type == "Revenue":
-        if forecast_change > 2:
-            st.success("Recommendation: Revenue is expected to increase. Consider reinforcing successful channels.")
-        elif forecast_change < -2:
-            st.warning("Recommendation: Revenue may decline. Review pricing, marketing, or demand drivers.")
-        else:
-            st.info("Recommendation: Revenue looks stable.")
-
-    elif target_type == "Stock / Asset Price":
-        if forecast_change > 2:
-            st.info("Observation: Upward movement is forecasted. This is not financial advice.")
-        elif forecast_change < -2:
-            st.info("Observation: Downward movement is forecasted. This is not financial advice.")
-        else:
-            st.info("Observation: Price appears relatively stable. This is not financial advice.")
-
-    elif target_type == "Energy / Usage":
-        if forecast_change > 2:
-            st.success("Recommendation: Usage is expected to rise. Prepare additional capacity or resources.")
-        elif forecast_change < -2:
-            st.warning("Recommendation: Usage is expected to fall. Avoid over-allocation of resources.")
-        else:
-            st.info("Recommendation: Usage looks stable.")
-
-    elif target_type == "Temperature / Weather":
-        if forecast_change > 2:
-            st.info("Observation: Temperature/weather-related value is expected to increase.")
-        elif forecast_change < -2:
-            st.info("Observation: Temperature/weather-related value is expected to decrease.")
-        else:
-            st.info("Observation: Forecast looks stable.")
-
+elif target_type == "Stock / Asset Price":
+    if forecast_change > 2:
+        st.info("Observation: Upward movement is forecasted. This is not financial advice.")
+    elif forecast_change < -2:
+        st.info("Observation: Downward movement is forecasted. This is not financial advice.")
     else:
-        if forecast_change > 2:
-            st.info("Observation: The target value is expected to increase.")
-        elif forecast_change < -2:
-            st.info("Observation: The target value is expected to decrease.")
-        else:
-            st.info("Observation: The target value looks stable.")
+        st.info("Observation: Price appears relatively stable. This is not financial advice.")
 
-
-    st.subheader("Alerts")
-
-    if forecast_change > 10:
-        st.error("Alert: Strong upward movement expected.")
-    elif forecast_change < -10:
-        st.error("Alert: Strong downward movement expected.")
+elif target_type == "Energy / Usage":
+    if forecast_change > 2:
+        st.success("Recommendation: Usage is expected to rise. Prepare additional capacity or resources.")
+    elif forecast_change < -2:
+        st.warning("Recommendation: Usage is expected to fall. Avoid over-allocation of resources.")
     else:
-        st.success("No major alert detected.")
+        st.info("Recommendation: Usage looks stable.")
+
+elif target_type == "Temperature / Weather":
+    if forecast_change > 2:
+        st.info("Observation: Temperature/weather-related value is expected to increase.")
+    elif forecast_change < -2:
+        st.info("Observation: Temperature/weather-related value is expected to decrease.")
+    else:
+        st.info("Observation: Forecast looks stable.")
+
+else:
+    if forecast_change > 2:
+        st.info("Observation: The target value is expected to increase.")
+    elif forecast_change < -2:
+        st.info("Observation: The target value is expected to decrease.")
+    else:
+        st.info("Observation: The target value looks stable.")
+
+st.subheader("Risk Alerts")
+
+if forecast_change > 10:
+    st.error("Alert: Strong upward movement expected.")
+elif forecast_change < -10:
+    st.error("Alert: Strong downward movement expected.")
+else:
+    st.success("No major alert detected.")
