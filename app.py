@@ -3,8 +3,12 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 from model_selector import evaluate_models, forecast_next_days
-from data_utils import detect_date_column, detect_target_column, standardize_columns
-
+from data_utils import (
+    detect_date_column,
+    detect_target_column,
+    standardize_columns,
+    fetch_yahoo_data
+)
 
 st.set_page_config(
     page_title="Auto Time-Series Forecasting App",
@@ -21,14 +25,64 @@ st.write(
 
 st.sidebar.header("Settings")
 
-uploaded_file = st.sidebar.file_uploader("Upload CSV file", type=["csv"])
+data_source = st.sidebar.radio(
+    "Choose data source",
+    ["Upload CSV", "Yahoo Finance"]
+)
 
-if uploaded_file is None:
-    st.info("Upload a CSV file to start forecasting.")
-    st.stop()
+df_raw = None
 
-df_raw = pd.read_csv(uploaded_file)
+if data_source == "Upload CSV":
+    uploaded_file = st.sidebar.file_uploader("Upload CSV file", type=["csv"])
 
+    if uploaded_file is None:
+        st.info("Upload a CSV file to start forecasting.")
+        st.stop()
+
+    df_raw = pd.read_csv(uploaded_file)
+
+else:
+    st.sidebar.subheader("Yahoo Finance Data")
+
+    preset_assets = {
+        "Apple (AAPL)": "AAPL",
+        "Tesla (TSLA)": "TSLA",
+        "Microsoft (MSFT)": "MSFT",
+        "Amazon (AMZN)": "AMZN",
+        "Google (GOOGL)": "GOOGL",
+        "NVIDIA (NVDA)": "NVDA",
+        "Gold Futures (GC=F)": "GC=F",
+        "Bitcoin (BTC-USD)": "BTC-USD",
+        "S&P 500 (^GSPC)": "^GSPC",
+        "EUR/USD (EURUSD=X)": "EURUSD=X"
+    }
+
+    selected_asset = st.sidebar.selectbox(
+        "Choose popular asset",
+        list(preset_assets.keys())
+    )
+
+    manual_ticker = st.sidebar.text_input(
+        "Or enter ticker manually",
+        value=preset_assets[selected_asset]
+    )
+
+    period = st.sidebar.selectbox(
+        "Select data period",
+        ["1y", "2y", "5y", "10y"]
+    )
+
+    if st.sidebar.button("Fetch Data"):
+        df_raw = fetch_yahoo_data(manual_ticker, period)
+
+        if df_raw is None or df_raw.empty:
+            st.error("Could not fetch data. Check ticker symbol and try again.")
+            st.stop()
+    else:
+        st.info("Choose a Yahoo Finance asset and click Fetch Data.")
+        st.stop()
+
+        
 st.subheader("Dataset Preview")
 st.dataframe(df_raw.head())
 

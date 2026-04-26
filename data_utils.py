@@ -48,3 +48,26 @@ def standardize_columns(df, date_col, target_col):
     clean_df = clean_df.sort_values("date")
 
     return clean_df
+
+import yfinance as yf
+
+
+def fetch_yahoo_data(ticker, period):
+    data = yf.download(ticker, period=period)
+
+    if data.empty:
+        return None
+
+    data = data.reset_index()
+
+    if "Close" not in data.columns:
+        return None
+
+    df = data[["Date", "Close"]].copy()
+    df.columns = ["date", "value"]
+
+    df["date"] = pd.to_datetime(df["date"])
+    df["value"] = pd.to_numeric(df["value"], errors="coerce")
+    df = df.dropna()
+
+    return df
