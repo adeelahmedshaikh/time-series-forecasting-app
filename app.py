@@ -63,9 +63,18 @@ else:
     )
 
     manual_ticker = st.sidebar.text_input(
-        "Or enter ticker manually",
-        value=preset_assets[selected_asset]
+    "Enter ticker (e.g., AAPL for Apple, BLK for BlackRock)",
+    value=preset_assets[selected_asset]
     )
+
+    st.sidebar.info(
+    "💡 Examples:\n"
+    "Apple → AAPL\n"
+    "Tesla → TSLA\n"
+    "BlackRock → BLK\n"
+    "Bitcoin → BTC-USD\n"
+    "Gold → GC=F"
+)
 
     period = st.sidebar.selectbox(
         "Select data period",
@@ -76,13 +85,18 @@ else:
         df_raw = fetch_yahoo_data(manual_ticker, period)
 
         if df_raw is None or df_raw.empty:
-            st.error("Could not fetch data. Check ticker symbol and try again.")
+            st.error(
+                "❌ Invalid ticker symbol.\n\n"
+                "Examples:\n"
+                "AAPL (Apple), TSLA (Tesla), BLK (BlackRock), BTC-USD (Bitcoin), GC=F (Gold)\n\n"
+                "Tip: Search on Google → 'company name + ticker'"
+            )
             st.stop()
     else:
         st.info("Choose a Yahoo Finance asset and click Fetch Data.")
         st.stop()
 
-        
+
 st.subheader("Dataset Preview")
 st.dataframe(df_raw.head())
 
