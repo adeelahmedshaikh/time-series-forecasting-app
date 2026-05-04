@@ -1,7 +1,8 @@
 import pandas as pd
 import numpy as np
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble import RandomForestRegressor, VotingRegressor, StackingRegressor
 from xgboost import XGBRegressor
+from sklearn.linear_model import Ridge
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from statsmodels.tsa.arima.model import ARIMA
 
@@ -53,7 +54,7 @@ def evaluate_models(df):
         "MSE": mean_squared_error(y_test, ma_pred)
     }
 
-        # ARIMA statistical model
+    # ARIMA statistical model
     try:
         arima_train = train["value"]
         arima_test = test["value"]
@@ -71,10 +72,11 @@ def evaluate_models(df):
         trained_models["ARIMA"] = arima_fit
 
     except Exception as e:
-        results["ARIMA skipped"] = {
+        results["ARIMA"] = {
             "MAE": float("inf"),
             "MSE": float("inf")
         }
+        print(f"ARIMA failed: {e}")
 
     # Random Forest
     rf = RandomForestRegressor(n_estimators=200, random_state=42)
@@ -103,19 +105,63 @@ def evaluate_models(df):
     }
     trained_models["XGBoost"] = xgb
 
+    # ===== ENSEMBLE MODELS (NEW) =====
+    try:
+        # Create voting ensemble from top models
+        estimators = [
+            ('rf', rf),
+            ('xgb', xgb)
+        ]
+        
+        voting_ensemble = VotingRegressor(estimators=estimators)
+        voting_ensemble.fit(X_train, y_train)
+        voting_pred = voting_ensemble.predict(X_test)
+        
+        results["Voting Ensemble"] = {
+            "MAE": mean_absolute_error(y_test, voting_pred),
+            "MSE": mean_squared_error(y_test, voting_pred)
+        }
+        trained_models["Voting Ensemble"] = voting_ensemble
+        
+        # Create stacking ensemble
+        stacking_ensemble = StackingRegressor(
+            estimators=estimators,
+            final_estimator=Ridge(alpha=1.0),
+            cv=5
+        )
+        stacking_ensemble.fit(X_train, y_train)
+        stacking_pred = stacking_ensemble.predict(X_test)
+        
+        results["Stacking Ensemble"] = {
+            "MAE": mean_absolute_error(y_test, stacking_pred),
+            "MSE": mean_squared_error(y_test, stacking_pred)
+        }
+        trained_models["Stacking Ensemble"] = stacking_ensemble
+        
+    except Exception as e:
+        print(f"Ensemble models failed: {e}")
+
     best_model_name = min(results, key=lambda name: results[name]["MAE"])
 
     return results, trained_models, best_model_name, features
 
 
-def forecast_next_days(df, model_name, trained_models, features, horizon=7):
+def forecast_next_days(df, model_name, trained_models, features, horizon=7, progress_callback=None):
+    """
+    Generate forecast for next N days
+    If progress_callback is provided, call it with (current_day, total_days)
+    """
     temp_df = df.copy()
     temp_df["date"] = pd.to_datetime(temp_df["date"])
     temp_df = temp_df.sort_values("date")
 
     predictions = []
 
-    for _ in range(horizon):
+    for i in range(horizon):
+        # Call progress callback if provided
+        if progress_callback:
+            progress_callback(i + 1, horizon)
+        
         temp_features = prepare_features(temp_df)
         latest_row = temp_features.iloc[-1]
 
@@ -125,15 +171,30 @@ def forecast_next_days(df, model_name, trained_models, features, horizon=7):
         elif model_name == "Moving Average":
             next_pred = latest_row["rolling_mean_3"]
 
-
         elif model_name == "ARIMA":
-            model = trained_models["ARIMA"]
-            next_pred = model.forecast(steps=1).iloc[0]
+            model = trained_models.get("ARIMA")
+            if model is None:
+                # Fallback to naive if ARIMA not available
+                next_pred = latest_row["lag_1"]
+            else:
+                try:
+                    forecast_result = model.forecast(steps=1)
+                    next_pred = forecast_result[0] if hasattr(forecast_result, '__getitem__') else float(forecast_result)
+                except:
+                    next_pred = latest_row["lag_1"]
 
         else:
-            model = trained_models[model_name]
-            X_latest = temp_features[features].iloc[[-1]]
-            next_pred = model.predict(X_latest)[0]
+            model = trained_models.get(model_name)
+            if model is None:
+                # Fallback to Random Forest
+                model = trained_models.get("Random Forest")
+            
+            if model is not None:
+                X_latest = temp_features[features].iloc[[-1]]
+                next_pred = model.predict(X_latest)[0]
+            else:
+                # Ultimate fallback
+                next_pred = latest_row["lag_1"]
 
         next_date = temp_df["date"].iloc[-1] + pd.Timedelta(days=1)
 
