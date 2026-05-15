@@ -13,6 +13,8 @@ from data_utils import (
 )
 from validation import validate_data, get_data_quality_report, suggest_data_fixes
 from cache_manager import ForecastCache
+from email_sender import send_forecast_email, send_forecast_with_attachment
+from minute_forecast import MinuteForecaster
 
 # Initialize cache
 forecast_cache = ForecastCache()
@@ -194,7 +196,30 @@ if mode == "Automatic Best Model":
 else:
     selected_model = st.sidebar.selectbox("Choose model", list(results.keys()))
 
-horizon = st.sidebar.selectbox("Forecast horizon", [7, 14, 30])
+# ============ CUSTOM DATE RANGE SELECTION ============
+st.sidebar.subheader("📅 Forecast Period")
+
+horizon_type = st.sidebar.radio(
+    "Select period type",
+    ["Days", "Weeks", "Months", "Custom Date"]
+)
+
+if horizon_type == "Days":
+    horizon = st.sidebar.slider("Number of days", 1, 90, 30)
+elif horizon_type == "Weeks":
+    weeks = st.sidebar.slider("Number of weeks", 1, 12, 4)
+    horizon = weeks * 7
+elif horizon_type == "Months":
+    months = st.sidebar.slider("Number of months", 1, 12, 3)
+    horizon = months * 30
+else:  # Custom Date
+    import datetime
+    min_date = df['date'].max().date() + datetime.timedelta(days=1)
+    max_date = min_date + datetime.timedelta(days=180)
+    end_date = st.sidebar.date_input("Forecast until", min_date + datetime.timedelta(days=30), min_date, max_date)
+    horizon = (end_date - min_date).days
+
+st.sidebar.write(f"📊 Forecasting **{horizon}** days ahead")
 
 # ============ CACHED FORECAST WITH PROGRESS ============
 cached_forecast = forecast_cache.get_cached_forecast(df, horizon, selected_model)
@@ -281,8 +306,8 @@ st.subheader("Forecast Results")
 # Show the forecast table
 st.dataframe(forecast_df)
 
-# Download buttons side by side
-col1, col2 = st.columns(2)
+# Download buttons
+col1, col2, col3 = st.columns(3)
 
 with col1:
     csv = forecast_df.to_csv(index=False).encode("utf-8")
@@ -294,7 +319,7 @@ with col1:
     )
 
 with col2:
-    # Simple direct PDF generation
+    # PDF generation
     pdf_buffer = generate_forecast_report(
         df=df,
         forecast_df=forecast_df,
@@ -313,54 +338,59 @@ with col2:
         key="pdf_direct_btn"
     )
 
-# # ============ FORECAST RESULTS & DOWNLOADS ============
-# st.subheader("Forecast Results")
+with col3:
+    # Email Report
+    with st.popover("📧 Send Email Report"):
+        recipient_email = st.text_input("Email address", "user@example.com")
+        if st.button("Send Forecast Report"):
+            send_forecast_email(recipient_email, forecast_df, forecast_change, target_col, horizon)
+            send_forecast_with_attachment(recipient_email, forecast_df, forecast_change, target_col)
 
-# # Show the forecast table
-# st.dataframe(forecast_df)
+# ============ ADVANCED MARKET INTELLIGENCE ============
 
-# # Download buttons side by side
-# col1, col2 = st.columns(2)
-
-# with col1:
-#     csv = forecast_df.to_csv(index=False).encode("utf-8")
-#     st.download_button(
-#         label="📥 Download CSV",
-#         data=csv,
-#         file_name=f"forecast_{pd.Timestamp.now().strftime('%Y%m%d')}.csv",
-#         mime="text/csv",
-#     )
-
-# with col2:
-#     # Initialize session state for PDF
-#     if 'pdf_generated' not in st.session_state:
-#         st.session_state.pdf_generated = False
-#     if 'pdf_buffer' not in st.session_state:
-#         st.session_state.pdf_buffer = None
+# Only show for Yahoo Finance data (since we have ticker)
+if data_source == "Yahoo Finance" and manual_ticker:
+    st.subheader("🌍 Advanced Market Intelligence")
     
-#     if st.button("📄 Generate PDF Report", key="pdf_gen_btn"):
-#         with st.spinner("Generating PDF report..."):
-#             st.session_state.pdf_buffer = generate_forecast_report(
-#                 df=df,
-#                 forecast_df=forecast_df,
-#                 results=results,
-#                 best_model=best_model,
-#                 forecast_change=forecast_change,
-#                 target_type=target_type,
-#                 target_col=target_col
-#             )
-#             st.session_state.pdf_generated = True
-#             st.success("PDF Ready! Click download button below.")
+    # Tab layout for advanced features
+    tab1, tab2, tab3, tab4 = st.tabs(["📰 News Sentiment", "📊 Data Pattern Analysis", "🎲 Scenario Analysis", "⏱️ Minute Forecast"])
     
-#     # Show download button if PDF is generated
-#     if st.session_state.pdf_generated and st.session_state.pdf_buffer is not None:
-#         st.download_button(
-#             label="📥 Download PDF",
-#             data=st.session_state.pdf_buffer,
-#             file_name=f"forecast_report_{pd.Timestamp.now().strftime('%Y%m%d')}.pdf",
-#             mime="application/pdf",
-#             key="pdf_download_btn"
-#         )
+    with tab1:
+        st.write("### Latest News Impact")
+        from news_sentiment import NewsSentimentAnalyzer
+        
+        # Your NewsAPI key
+        NEWS_API_KEY = "81LALC3RFCMRQPBN"
+        
+        news_analyzer = NewsSentimentAnalyzer(news_api_key=NEWS_API_KEY)
+        news_list = news_analyzer.fetch_news_api(manual_ticker)
+        
+        if not news_list:
+            news_list = news_analyzer.fetch_news_free(manual_ticker)
+        
+        news_analyzer.display_news(news_list)
+        
+        sentiment_summary = news_analyzer.get_sentiment_summary(news_list)
+        if sentiment_summary:
+            st.info(f"📊 **Overall Sentiment**: {sentiment_summary['overall']} | Score: {sentiment_summary['avg_sentiment_score']:.2f}")
+    
+    with tab2:
+        st.write("### Data Pattern Analysis")
+        from multivariate_data import MultivariateDataFetcher
+        
+        mvf = MultivariateDataFetcher()
+        insights = mvf.analyze_data(df)
+        mvf.display_insights(insights)
+    
+    with tab3:
+        from scenario_analyzer import ScenarioAnalyzer
+        
+        scenario = ScenarioAnalyzer()
+        scenario.display_scenario_ui(forecast_df)
+    
+    with tab4:
+        minute_fc = MinuteForecaster()
+        minute_fc.display_minute_ui(df)
 
 # ============ FORECAST CHART ============
 st.subheader("Forecast Chart")
